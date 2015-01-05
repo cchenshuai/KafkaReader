@@ -320,7 +320,7 @@ public class KafkaSimpleApi {
         }
         //获取leader broker, 来构造SimpleConsumer
         String leadBroker = metadata.leader().host();
-        System.out.println("find leader broker" + leadBroker);
+        System.out.println("find leader broker " + leadBroker);
         String clientName = "Client_" + topic + "_" + partition;
 
         //SimpleConsumer的参数分别为host, port, timeout, buffersize, clientName
