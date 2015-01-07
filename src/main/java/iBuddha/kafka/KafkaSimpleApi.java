@@ -356,6 +356,9 @@ public class KafkaSimpleApi {
             long oldestOffset = getLastOffset(consumer, topic, partition, kafka.api.OffsetRequest.EarliestTime(), "SimpleConsumer");
             long latestOffset = getLastOffset(consumer, topic, partition, kafka.api.OffsetRequest.LatestTime(), "SimpleConsumer");
             System.out.println("Oldest offset is " + oldestOffset + ", latest offset is " + (latestOffset));
+            if(startOffset < oldestOffset || endOffset > latestOffset){
+                throw new RuntimeException("not available offsets. Make sure start offset >= " + oldestOffset + " and end offset <= " + latestOffset);
+            }
             int numberErrors = 0;
             //尝试5次，然后退出
             while (numberErrors < 5 && (oldestOffset == -1 || latestOffset == -1)) {
