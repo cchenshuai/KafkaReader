@@ -11,6 +11,7 @@ import kafka.message.MessageAndOffset;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.sql.Timestamp;
 import java.util.*;
 
 /**
@@ -76,17 +77,18 @@ public class KafkaSimpleApi {
         try {
             consumer = new SimpleConsumer(leadBroker, port, 100000, 64 * 1024, clientName);
 //        System.out.println("constructed SimpleConsumer in getAllMessages");
-            TopicAndPartition topicAndPartition = new TopicAndPartition(topic, partition);
-            Map<TopicAndPartition, PartitionOffsetRequestInfo> requestInfo = new HashMap<TopicAndPartition, PartitionOffsetRequestInfo>();
-            requestInfo.put(topicAndPartition, new PartitionOffsetRequestInfo(whichTime, 1));
-            OffsetRequest request = new OffsetRequest(requestInfo, kafka.api.OffsetRequest.CurrentVersion(), clientName);
-            OffsetResponse response = consumer.getOffsetsBefore(request);
-            if (response.hasError()) { //return -1 when error
-                System.out.println("Error fetching data Offset Data the Broker. Reason: " + response.errorCode(topic, partition));
-                return -1;
-            }
-            long[] offsets = response.offsets(topic, partition);
-            return offsets[0];
+//            TopicAndPartition topicAndPartition = new TopicAndPartition(topic, partition);
+//            Map<TopicAndPartition, PartitionOffsetRequestInfo> requestInfo = new HashMap<TopicAndPartition, PartitionOffsetRequestInfo>();
+//            requestInfo.put(topicAndPartition, new PartitionOffsetRequestInfo(whichTime, 1));
+//            OffsetRequest request = new OffsetRequest(requestInfo, kafka.api.OffsetRequest.CurrentVersion(), clientName);
+//            OffsetResponse response = consumer.getOffsetsBefore(request);
+//            if (response.hasError()) { //return -1 when error
+//                System.out.println("Error fetching data Offset Data the Broker. Reason: " + response.errorCode(topic, partition));
+//                return -1;
+//            }
+//            long[] offsets = response.offsets(topic, partition);
+//            return offsets[0];
+            return getLastOffset(consumer, topic, partition, whichTime, clientName);
         } finally {
             if (consumer != null)
                 consumer.close();
@@ -95,6 +97,7 @@ public class KafkaSimpleApi {
 
 
     public static long getLastOffset(SimpleConsumer consumer, String topic, int partition, long whichTime, String clientName) {
+        long biggestOffsetAvailable = getMaxAvailableOffset(consumer, topic, partition, clientName);
         TopicAndPartition topicAndPartition = new TopicAndPartition(topic, partition);
         Map<TopicAndPartition, PartitionOffsetRequestInfo> requestInfo = new HashMap<TopicAndPartition, PartitionOffsetRequestInfo>();
         requestInfo.put(topicAndPartition, new PartitionOffsetRequestInfo(whichTime, 1));
@@ -105,8 +108,31 @@ public class KafkaSimpleApi {
             return -1;
         }
         long[] offsets = response.offsets(topic, partition);
+        if(offsets.length == 0)
+            throw new RuntimeException("can't fetch offset for time " + new Timestamp(whichTime).toString());
+        long lastOffset = offsets[0];
+        if(lastOffset > biggestOffsetAvailable)
+            return biggestOffsetAvailable;
         return offsets[0];
     }
+
+    public static long getMaxAvailableOffset(SimpleConsumer consumer, String topic, int partition, String clientName) {
+        TopicAndPartition topicAndPartition = new TopicAndPartition(topic, partition);
+        Map<TopicAndPartition, PartitionOffsetRequestInfo> requestInfo = new HashMap<TopicAndPartition, PartitionOffsetRequestInfo>();
+        requestInfo.put(topicAndPartition, new PartitionOffsetRequestInfo(kafka.api.OffsetRequest.LatestTime(), 1));
+        OffsetRequest request = new OffsetRequest(requestInfo, kafka.api.OffsetRequest.CurrentVersion(), clientName);
+        OffsetResponse response = consumer.getOffsetsBefore(request);
+        if (response.hasError()) {
+            System.out.println("Error fetching data Offset Data the Broker. Reason: " + response.errorCode(topic, partition));
+            return -1;
+        }
+        long[] offsets = response.offsets(topic, partition);
+        if(offsets.length == 0)
+            throw new RuntimeException("can't fetch offset for kafka.api.OffsetRequest.LatestTime()");
+        long lastOffset = offsets[0];
+        return offsets[0] - 1;
+    }
+
 
     /**
      * 当fetch返回错误码的时候，we log the reason, close the consumer,then try to fingure out who the new leader is
@@ -329,7 +355,7 @@ public class KafkaSimpleApi {
             //获取最老的offset和新最新的offset
             long oldestOffset = getLastOffset(consumer, topic, partition, kafka.api.OffsetRequest.EarliestTime(), "SimpleConsumer");
             long latestOffset = getLastOffset(consumer, topic, partition, kafka.api.OffsetRequest.LatestTime(), "SimpleConsumer");
-            System.out.println("oldest offset is " + oldestOffset + ", latest offset is " + latestOffset);
+            System.out.println("Oldest offset is " + oldestOffset + ", latest offset is " + (latestOffset));
             int numberErrors = 0;
             //尝试5次，然后退出
             while (numberErrors < 5 && (oldestOffset == -1 || latestOffset == -1)) {
@@ -345,9 +371,9 @@ public class KafkaSimpleApi {
                 }
                 //construct new consumer from mew leader
                 consumer = new SimpleConsumer(newLeader, port, 100000, 64 * 1024, clientName);
-                oldestOffset = getLastOffset(consumer, topic, partition, kafka.api.OffsetRequest.EarliestTime(), "SimpleConsumer");
-                latestOffset = getLastOffset(consumer, topic, partition, kafka.api.OffsetRequest.LatestTime(), "SimpleConsumer");
-                System.out.println("oldest offset is " + oldestOffset + ", latest offset is " + latestOffset);
+//                oldestOffset = getLastOffset(consumer, topic, partition, kafka.api.OffsetRequest.EarliestTime(), "SimpleConsumer");
+//                latestOffset = getLastOffset(consumer, topic, partition, kafka.api.OffsetRequest.LatestTime(), "SimpleConsumer");
+//                System.out.println("Oldest offset is " + (oldestOffset -1) + ", latest offset is " + (latestOffset - 1));
             }
             if (oldestOffset == -1 || latestOffset == -1) {
                 throw new IOException("failed to get oldest offset and latest offset");
